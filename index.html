@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dice Probability Calculator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1 class="step1H1">骰子機率計算機</h1>
+        <div id="step1">
+            <h2>步驟 1 : 輸入骰子數量</h2>
+            <input type="number" id="diceNumber" min="0" value="0">
+            <button onclick="nextStep()">Next</button>
+        </div>
+        <div id="step2" style="display: none;">
+            <h2 id="step2H">步驟 2 : 輸入骰出的骰面</h2>
+            <div id="result" style="display: none;">
+              <h2>本輪骰面出現機率推算</h2>
+              <div id="probabilityTable"></div>
+            </div>
+            <p id="roundTitle">第1輪 輸入骰面結果 : </p>
+            <div id="diceRolls"></div><br>
+            <p id="diceLeft">剩餘骰子數: <span id="remainingDice">0</span></p>
+            <p id="warning" class="warning" style="display: none;">還有沒分配完的骰子</p>
+            <button onclick="nextRound()">輸入骰面 並自動產生下輪骰面機率</button>
+            <!-- <button onclick="inheritData()">繼承數據</button> -->
+            <button onclick="adjustBaseProbability()">偏心骰調整</button>
+            <button onclick="clearRoundsStore()">清除歷史資料</button>
+        </div>
+    </div>
+    <script>
+        let numberOfDice; // 一回合擲骰子的數量
+        let remainingDice; // 剩餘的骰子數
+        let rolls = [0, 0, 0, 0, 0, 0]; // 各骰面出現次數
+        let round = 1; // 回合數
+        let diceSrc = ['die1.png', 'die2.png', 'die3.png', 'die4.png', 'die5.png', 'die6.png']
+        let db; // IndexedDB 資料庫物件
+        let baseProbability = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6] // 每個骰面的基礎機率
+
+        function inheritData() {
+            // 開啟一個 transaction
+            var transaction = db.transaction(['rollsStore'], 'readonly');
+            var objectStore = transaction.objectStore('rollsStore');
+
+            // 開啟游標來獲取所有數據
+            var request = objectStore.openCursor();
+
+            // 初始化每個骰面的計數
+            let newRolls = [0, 0, 0, 0, 0, 0];
+            maxRound = 0;
+
+            // 當游標訪問到一個數據時，執行這個函數
+            request.onsuccess = function(event) {
+                var cursor = event.target.result;
+                if (cursor) {
+                    let roundData = cursor.value;
+                    if (roundData.numberOfDice == numberOfDice){ // 骰子一樣才能繼承
+
+                        // 獲取該輪骰面計數，並加到每個骰面的計數上
+                        for (let i = 0; i < 6; i++) {
+                            newRolls[i] += roundData.diceCounts[i];
+                        }
+
+                        if (roundData.round >=  maxRound){
+                            maxRound = roundData.round;
+                        }
+                    }
+                    // 移動到下一條數據
+                    cursor.continue();
+                } else {
+                    round = maxRound;
+                    rolls = newRolls;
+                    console.log('Inherit data success:');
+                    calculateProbability(false);
+                    round++;
+                    document.getElementById("roundTitle").innerHTML = `第${round}輪 輸入骰面結果 : `;
+                }
+            };
+
+            request.onerror = function(event) {
+                console.error('Error Inherit data:', event.target.errorCode);
+            };
+        }
+
+        function adjustBaseProbability() {
+            // 開啟一個 transaction
+            var transaction = db.transaction(['rollsStore'], 'readonly');
+            var objectStore = transaction.objectStore('rollsStore');
+
+            // 開啟游標來獲取所有數據
+            var request = objectStore.openCursor();
+            
+            // 初始化每個骰面的計數
+            let diceCounts = [0, 0, 0, 0, 0, 0];
+
+            // 當游標訪問到一個數據時，執行這個函數
+            request.onsuccess = function(event) {
+                var cursor = event.target.result;
+                if (cursor) {
+                    let roundData = cursor.value;
+                    // 獲取該輪骰面計數，並加到每個骰面的計數上
+                    if (roundData.numberOfDice == numberOfDice){
+                        for (let i = 0; i < 6; i++) {
+                            diceCounts[i] += roundData.diceCounts[i];
+                        }
+                    }
+                    // 移動到下一條數據
+                    cursor.continue();
+                } else {
+                    // 當游標訪問完所有數據後，計算新的 baseProbability
+                    let totalRolls = diceCounts.reduce((a, b) => a + b, 0);
+                    baseProbability = diceCounts.map(count => count / totalRolls);
+                    console.log('New baseProbability:', baseProbability);
+                    calculateProbability(true)
+                }
+            };
+
+            request.onerror = function(event) {
+                console.error('Error adjusting base probability:', event.target.errorCode);
+            };
+        }
+
+        // 初始化IndexedDB
+        function initIndexedDB() {
+            var request = indexedDB.open('diceDatabase', 1);
+
+            request.onupgradeneeded = function(event) {
+                db = event.target.result;
+                var objectStore = db.createObjectStore('rollsStore', { keyPath: 'id', autoIncrement: true });
+
+            };
+
+            request.onsuccess = function(event) {
+                db = event.target.result;
+            };
+
+            request.onerror = function(event) {
+                console.error('IndexedDB error:', event.target.errorCode);
+            };
+        }
+
+        // 儲存每輪數據到IndexedDB
+        function saveRoundToIndexedDB(roundData) {
+            var transaction = db.transaction(['rollsStore'], 'readwrite');
+            var objectStore = transaction.objectStore('rollsStore');
+
+            var request = objectStore.add(roundData);
+
+            request.onsuccess = function(event) {
+                // console.log('Round data saved to IndexedDB');
+            };
+
+            request.onerror = function(event) {
+                console.error('Error saving round data to IndexedDB:', event.target.errorCode);
+            };
+        }
+
+            // 清除 roundsStore
+            function clearRoundsStore() {
+            var transaction = db.transaction(['rollsStore'], 'readwrite');
+            var objectStore = transaction.objectStore('rollsStore');
+
+            // 清除所有數據
+            var request = objectStore.clear();
+
+            request.onsuccess = function(event) {
+                console.log('rollsStore cleared');
+            };
+
+            request.onerror = function(event) {
+                console.error('Error clearing rollsStore:', event.target.errorCode);
+            };
+
+            calculateProbability(true);
+        }
+
+        // 獲得骰子數量後渲染到新頁面
+        function nextStep() {
+            numberOfDice = parseInt(document.getElementById("diceNumber").value);
+            remainingDice = numberOfDice;
+            document.getElementById("step1").style.display = "none";
+            document.getElementById("step2").style.display = "block";
+            const element = document.querySelector('h1.step1H1');
+            if (element) {
+                element.classList.remove('step1H1');
+            }
+            renderDiceRollInputs();
+            updateRemainingDice();
+            inheritData()
+        }
+
+        // 渲染骰子計數器面板
+        function renderDiceRollInputs() {
+            let diceRollsDiv = document.getElementById("diceRolls");
+            diceRollsDiv.innerHTML = "";
+            
+            let diceRow1 = `<div class="diceRow">`;
+            for (let i = 1; i <= 6; i++) {
+                diceRow1 += `<img class="diceImg" src="${diceSrc[i-1]}">`;
+            }
+            diceRow1 += `</div>`;
+            
+            let diceRow2 = `<div class="diceRow">`;
+            for (let i = 1; i <= 6; i++) {
+                diceRow2 += `
+                    <div class="diceControl">
+                        <button class="arrowButton" onclick="changeDiceCount(${i}, 1)">▲</button>
+                        <input type="number" id="dice${i}" min="0" value="0" readonly>
+                        <button class="arrowButton" onclick="changeDiceCount(${i}, -1)">▼</button>
+                    </div>`;
+            }
+            diceRow2 += `</div>`;
+            
+            diceRollsDiv.innerHTML = diceRow1 + diceRow2;
+        }
+
+        // 更新骰子計數
+        function changeDiceCount(diceIndex, change) {
+            let diceInput = document.getElementById(`dice${diceIndex}`);
+            let currentValue = parseInt(diceInput.value) || 0;
+            let newValue = currentValue + change;
+            if (newValue >= 0 && (remainingDice - change) >= 0) {
+                diceInput.value = newValue;
+                remainingDice -= change;
+                updateRemainingDice();
+            }
+        }
+
+        // 更新剩餘骰子數量
+        function updateRemainingDice() {
+            document.getElementById("remainingDice").innerText = remainingDice;
+        }
+
+        // 使用者觸發下一輪操作
+        function nextRound() {
+            if (remainingDice > 0) {
+                document.getElementById("warning").style.display = "block";
+                return;
+            }
+            document.getElementById("warning").style.display = "none";
+
+            // 收集當前回合數據
+            let roundData = {
+                numberOfDice: numberOfDice,
+                round: round,
+                diceCounts: [],
+                // rolls: []
+            };
+
+            for (let i = 1; i <= 6; i++) {
+                roundData.diceCounts.push(parseInt(document.getElementById(`dice${i}`).value) || 0);
+            }
+
+            for (let i = 1; i <= 6; i++) {
+                let roll = parseInt(document.getElementById(`dice${i}`).value) || 0;
+                rolls[i - 1] += roll;
+            }
+
+            // roundData.rolls = rolls
+
+            saveRoundToIndexedDB(roundData); // 儲存數據到IndexedDB
+
+            calculateProbability(false);
+            round++;
+            document.getElementById("step2H").style.display = "none";
+            document.getElementById("roundTitle").innerHTML = `第${round}輪 輸入骰面結果 : `;
+            resetDiceInputs();
+            remainingDice = numberOfDice;
+            updateRemainingDice();
+        }
+
+        // 重置骰子數量輸入口
+        function resetDiceInputs() {
+            for (let i = 1; i <= 6; i++) {
+                document.getElementById(`dice${i}`).value = 0;
+            }
+        }
+
+        // 計算下期骰子機率 並直接修改元素內容
+        function calculateProbability(isAdjustBaseProbability) {
+            let ExpectedValue = [0, 0, 0, 0, 0, 0] // 每個骰面的出現期望值
+            let rollsActualDeviation = [0, 0, 0, 0, 0, 0]; // 實際偏差
+
+            for (let i = 0; i < 6; i++){
+                ExpectedValue[i] = baseProbability[i] * numberOfDice * round;
+                rollsActualDeviation[i] = Math.round((ExpectedValue[i] - rolls[i] + Number.EPSILON) * 100) / 100;
+            }
+
+            if (isAdjustBaseProbability){
+                for (let i = 0; i < 6; i++){
+                    ExpectedValue[i] = baseProbability[i] * numberOfDice * (round - 1);
+                    rollsActualDeviation[i] = Math.round((ExpectedValue[i] - rolls[i] + Number.EPSILON) * 100) / 100;
+                }
+            }
+
+            let probabilityOffsetBase = 0; // 機率偏移基準
+            for (let i = 0; i < rollsActualDeviation.length; i++){
+                if (rollsActualDeviation[i] > 0){
+                    probabilityOffsetBase += rollsActualDeviation[i];
+                }
+            }
+
+            let deviatedProbability = [0, 0, 0, 0, 0, 0] // 偏移過的機率
+
+            for (let i = 0; i < deviatedProbability.length; i++){
+                deviatedProbability[i] = 1/6 + 1/12 * (rollsActualDeviation[i] / probabilityOffsetBase)
+            }
+            
+            // 建立 table 的 HTML 字串
+            let probabilityTable = "<table><tr><th>骰面</th>"; // 第一列的標題列
+            probabilityTable += "<th>與期望值偏差</th>"
+            probabilityTable += "<th>下輪推算出現機率</th></tr>";
+            
+            // 建立其餘的列
+            for (let i = 1; i <= 6; i++) {
+                probabilityTable += `<tr><th><img class='diceImg' src='${diceSrc[i-1]}'></th>`; // 每列的第一行寫出現骰面幾
+                probabilityTable += `<td>`
+                if (rollsActualDeviation[i-1] < 0){
+                    probabilityTable += `多${Math.abs(rollsActualDeviation[i-1])}顆</td>`;
+                } else {
+                    probabilityTable += `少${rollsActualDeviation[i-1]}顆</td>`;
+                }
+                probabilityTable += `<td>${isNaN(Math.round((deviatedProbability[i-1] + Number.EPSILON) * 100)) ? Math.round((1/6 + Number.EPSILON) * 100) : Math.round((deviatedProbability[i-1] + Number.EPSILON) * 100)}%</td></tr>`
+                    
+            }
+            
+            probabilityTable += "</table>";
+            document.getElementById("probabilityTable").innerHTML = probabilityTable;
+            document.getElementById("result").style.display = "block";
+        }
+    
+        if (typeof document !== 'undefined') {
+            // 初始化IndexedDB
+            initIndexedDB();
+        }
+    </script>
+</body>
+</html>

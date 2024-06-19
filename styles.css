@@ -1,0 +1,94 @@
+html {
+  height: 99%;
+}
+
+body {
+  height: 99%;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 99%;
+  max-width: 600px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+h1, h2 {
+  color: #333;
+}
+
+.step1H1 {
+  margin-top: 20%;
+}
+
+button {
+  background-color: #007bff;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+input[type="number"] {
+  width: 50px;
+  text-align: center;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table, th, td {
+  border: 1px solid #333;
+  padding: 10px;
+}
+
+th {
+  background-color: #f2f2f2;
+}
+
+img.diceImg {
+  width: 30px;
+  height: 30px;
+}
+
+.diceRow {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.diceControl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 10px;
+}
+
+.arrowButton {
+  background-color: #007bff;
+  color: #fff;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  border-radius: 5px;
+  margin: 2px 0;
+}
+
+.arrowButton:hover {
+  background-color: #0056b3;
+}
+
+.warning {
+  color: #fff;
+  background-color: crimson;
+}
