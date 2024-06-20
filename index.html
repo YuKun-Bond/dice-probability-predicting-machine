@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dice Probability Calculator</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -28,6 +29,7 @@
             <!-- <button onclick="inheritData()">繼承數據</button> -->
             <button onclick="adjustBaseProbability()">偏心骰調整</button>
             <button onclick="clearRoundsStore()">清除歷史資料</button>
+            <div id="chart" class="chart-centered"></div>
         </div>
     </div>
     <script>
@@ -38,6 +40,67 @@
         let diceSrc = ['die1.png', 'die2.png', 'die3.png', 'die4.png', 'die5.png', 'die6.png']
         let db; // IndexedDB 資料庫物件
         let baseProbability = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6] // 每個骰面的基礎機率
+        // 初始化ECharts
+        let chartDom = document.getElementById('chart');
+        let myChart = echarts.init(chartDom);
+        myChart.resize({width: '500px', height: '400px'});
+
+        function updataCharts() {
+            chartDom.style.display = 'block';
+
+            let ExpectedValue = [0, 0, 0, 0, 0, 0] // 每個骰面的出現期望值
+            for (let i = 0; i < 6; i++){
+                ExpectedValue[i] = baseProbability[i] * numberOfDice * round;
+            }
+            console.log(ExpectedValue);
+
+            // 更新折線圖選項
+            let option = {
+                title: {
+                    text: '骰子機率計算'
+                },
+                tooltip: {
+                    trigger: 'axis'
+                },
+                legend: {
+                    data: ['實際出現次數', '期望值']
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                toolbox: {
+                    feature: {
+                        saveAsImage: {}
+                    }
+                },
+                xAxis: {
+                    type: 'category',
+                    boundaryGap: false,
+                    data: ['骰面 1', '骰面 2', '骰面 3', '骰面 4', '骰面 5', '骰面 6']
+                },
+                yAxis: {
+                    type: 'value'
+                },
+                series: [
+                    {
+                        name: '期望值',
+                        type: 'line',
+                        data: ExpectedValue
+                    },
+                    {
+                        name: '實際出現次數',
+                        type: 'line',
+                        data: rolls
+                    }
+                ]
+            };
+
+            // 使用指定的配置和數據顯示圖表。
+            myChart.setOption(option);
+        }
 
         function inheritData() {
             // 開啟一個 transaction
@@ -72,7 +135,7 @@
                 } else {
                     round = maxRound;
                     rolls = newRolls;
-                    console.log('Inherit data success:');
+                    console.log('Inherit data success');
                     calculateProbability(false);
                     round++;
                     document.getElementById("roundTitle").innerHTML = `第${round}輪 輸入骰面結果 : `;
@@ -157,8 +220,8 @@
             };
         }
 
-            // 清除 roundsStore
-            function clearRoundsStore() {
+        // 清除 roundsStore
+        function clearRoundsStore() {
             var transaction = db.transaction(['rollsStore'], 'readwrite');
             var objectStore = transaction.objectStore('rollsStore');
 
@@ -172,7 +235,9 @@
             request.onerror = function(event) {
                 console.error('Error clearing rollsStore:', event.target.errorCode);
             };
-
+            rolls = [0, 0, 0, 0, 0, 0];
+            round = 1;
+            baseProbability = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
             calculateProbability(true);
         }
 
@@ -329,6 +394,7 @@
             probabilityTable += "</table>";
             document.getElementById("probabilityTable").innerHTML = probabilityTable;
             document.getElementById("result").style.display = "block";
+            updataCharts();
         }
     
         if (typeof document !== 'undefined') {
